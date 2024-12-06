@@ -1,3 +1,4 @@
+use dotenv::dotenv;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod structs;
@@ -7,9 +8,11 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use self::structs::client_server::ClientServer;
 use self::structs::payload::{MessageType, Payload};
 
-const CLI_COMMANDS: [&str; 5] = ["ping", "add", "list", "close", "exit"];
+const CLI_COMMANDS: [&str; 6] = ["add", "ping", "message", "list", "close", "exit"];
 
 fn main() {
+    dotenv().ok();
+
     let mut user_client_server = ClientServer::new();
 
     loop {
@@ -25,30 +28,74 @@ fn main() {
                 "ping" => {
                     let user_ids = user_client_server.list_user_ids(true);
 
-                    let selection = Select::with_theme(&ColorfulTheme::default())
-                        .with_prompt("Which user? (q for none)")
-                        .default(0)
-                        .items(&user_ids[..])
-                        .interact_opt()
-                        .unwrap();
+                    if user_ids.len() > 0 {
+                        let selection = Select::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Which user? (q for none)")
+                            .default(0)
+                            .items(&user_ids[..])
+                            .interact_opt()
+                            .unwrap();
 
-                    match selection {
-                        Some(option) => {
-                            let user_id = &user_ids[option];
-                            let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+                        match selection {
+                            Some(option) => {
+                                let user_id = &user_ids[option];
+                                let duration =
+                                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
 
-                            let payload: Payload = Payload {
-                                from: user_id.clone(),
-                                kind: MessageType::User,
-                                text: format!("pong!"),
-                                timestamp: duration.as_secs(),
-                            };
+                                let payload: Payload = Payload {
+                                    from: user_id.clone(),
+                                    kind: MessageType::User,
+                                    text: format!("pong!"),
+                                    timestamp: duration.as_secs(),
+                                };
 
-                            user_client_server.write(user_id, &payload);
+                                user_client_server.write(user_id, &payload);
+                            }
+                            None => {
+                                println!("No user selected.")
+                            }
                         }
-                        None => {
-                            println!("No user selected.")
+                    } else {
+                        return println!("No users.");
+                    }
+                }
+                "message" => {
+                    let user_ids = user_client_server.list_user_ids(true);
+
+                    if user_ids.len() > 0 {
+                        let selection = Select::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Which user? (q for none)")
+                            .default(0)
+                            .items(&user_ids[..])
+                            .interact_opt()
+                            .unwrap();
+
+                        match selection {
+                            Some(option) => {
+                                let user_id = &user_ids[option];
+                                let duration =
+                                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
+                                let message: String = Input::with_theme(&ColorfulTheme::default())
+                                    .with_prompt("Message?")
+                                    .interact_text()
+                                    .unwrap();
+
+                                let payload: Payload = Payload {
+                                    from: user_id.clone(),
+                                    kind: MessageType::User,
+                                    text: message,
+                                    timestamp: duration.as_secs(),
+                                };
+
+                                user_client_server.write(user_id, &payload);
+                            }
+                            None => {
+                                println!("No user selected.")
+                            }
                         }
+                    } else {
+                        return println!("No users.");
                     }
                 }
                 "add" => {
@@ -69,6 +116,9 @@ fn main() {
                         .unwrap();
 
                     user_client_server.add_client(&user_id);
+
+                    user_client_server.notify_presence(&user_id);
+
                     println!("Added client {}", &user_id);
                 }
                 "list" => {
@@ -86,21 +136,25 @@ fn main() {
                 "close" => {
                     let user_ids = user_client_server.list_user_ids(true);
 
-                    let selection = Select::with_theme(&ColorfulTheme::default())
-                        .with_prompt("Close connection for which user?")
-                        .default(0)
-                        .items(&user_ids[..])
-                        .interact_opt()
-                        .unwrap();
-                    match selection {
-                        Some(option) => {
-                            let user_id = &user_ids[option];
+                    if user_ids.len() > 0 {
+                        let selection = Select::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Close connection for which user?")
+                            .default(0)
+                            .items(&user_ids[..])
+                            .interact_opt()
+                            .unwrap();
+                        match selection {
+                            Some(option) => {
+                                let user_id = &user_ids[option];
 
-                            user_client_server.close_client(user_id);
+                                user_client_server.close_client(user_id);
+                            }
+                            None => {
+                                println!("No user selected.")
+                            }
                         }
-                        None => {
-                            println!("No user selected.")
-                        }
+                    } else {
+                        return println!("No users.");
                     }
                 }
                 "exit" => {
@@ -113,6 +167,11 @@ fn main() {
                         .interact()
                         .unwrap()
                     {
+                        for user_id in user_client_server.list_user_ids(true) {
+                            println!("Closing socket for {}", &user_id);
+                            user_client_server.close_client(&user_id);
+                        }
+
                         break;
                     } else {
                         println!("Resuming client server");

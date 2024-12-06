@@ -10,6 +10,8 @@ use crate::structs::payload::{MessageType, Payload};
 use tungstenite::protocol::frame::{coding::CloseCode, CloseFrame};
 use tungstenite::{connect, stream::MaybeTlsStream, Message, WebSocket};
 
+use super::presence::Presence;
+
 pub struct Client {
     pub socket: Box<WebSocket<MaybeTlsStream<TcpStream>>>,
     username: String,
@@ -77,8 +79,9 @@ impl ClientServer {
         hasher.update(&user_id);
         hasher.update(&duration.as_secs().to_string());
         let result = hasher.finalize();
+        let id = format!("{:x}", &result);
 
-        let endpoint: String = format!("ws://127.0.0.1:8000/echo_channel/{:x}", &result);
+        let endpoint: String = format!("{}/ws/chat/{}", std::env::var("WS_API").unwrap(), id);
         let (socket, _response) = connect(endpoint).expect("Can't connect");
 
         self.clients.insert(
@@ -158,5 +161,24 @@ impl ClientServer {
                 println!("User not found");
             }
         }
+    }
+
+    pub fn notify_presence(&self, user_id: &str) {
+        let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+
+        let endpoint: String = format!("{}/ws/chat/presence", std::env::var("WS_API").unwrap());
+        let (mut socket, _response) = connect(endpoint).expect("Can't connect");
+
+        let presence: Presence = Presence {
+            user_id: user_id.to_string(),
+            timestamp: duration.as_secs(),
+        };
+
+        match socket.send(presence.to_message()) {
+            Ok(()) => {
+                println!("send presence notification broadcast")
+            }
+            Err(error) => println!("error: {}", error),
+        };
     }
 }
